@@ -225,7 +225,7 @@
 |-------|--------|
 | Phase 0 — Static Frontend | ✅ Complete |
 | Phase 1 — Backend Foundation | ✅ Complete |
- Paste your real Supabase URL into .env, then run:| Phase 2 — Database Integration | ✅ Complete |
+| Phase 2 — Database Integration | ✅ Complete |
 | Phase 3 — Authentication | ✅ Core Complete |
 | Phase 4 — Real-Time (Socket.io) | ✅ Core Complete |
 | Phase 5 — AI Assistant Upgrade | ✅ Core Complete |
@@ -236,6 +236,40 @@
 | Phase 10 — Community Features | ⬜ Not Started |
 | Phase 11 — Security | ⬜ Not Started |
 | Phase 12 — Deployment & DevOps | ⬜ Not Started |
+
+---
+
+## Current Gaps & Honest Assessment
+
+> Tracks known weaknesses that must be addressed before production.
+
+### 🔴 Critical — Must Fix
+| Gap | Impact | Phase |
+|-----|--------|-------|
+| Frontend is still static HTML — no React | No dynamic UI, no real auth, no API calls wired | Phase 9 |
+| No security hardening (XSS, CSRF, httpOnly cookies) | App is vulnerable to common web attacks | Phase 11 |
+| No deployment pipeline | Cannot ship to real users | Phase 12 |
+| Token refresh logic missing | Users get logged out every 15 mins, no silent refresh | Phase 3 |
+
+### 🟡 High Priority — Needed for Core Features
+| Gap | Impact | Phase |
+|-----|--------|-------|
+| 7 of 13 phases completely untouched | ~60% of planned features don't exist yet | Phase 6–12 |
+| Google OAuth not implemented | Login with Google button does nothing | Phase 3 |
+| No DB seed scripts | Cannot demo the app with realistic data | Phase 2 |
+| Live notifications not wired | Socket.io infra exists but notifications don't fire | Phase 4 |
+| WebRTC only works locally (no STUN/TURN) | Voice/video calls break outside localhost | Phase 8 |
+
+### 🟢 Nice to Have — Polish & Growth
+| Gap | Impact | Phase |
+|-----|--------|-------|
+| No multi-language AI support | Limits reach to non-English users | Phase 5 |
+| No trending algorithm for community | Feed is unordered and unengaging | Phase 10 |
+| No error monitoring (Sentry) | Silent failures in production, hard to debug | Phase 12 |
+| No lawyer availability calendar | Lawyers can't show when they're free | Phase 6 |
+
+### Overall Rating: 5.5 / 10
+> Strong backend foundation and DB schema. But the frontend is static, security is unhardened, and 7 phases are untouched. Solid architecture — not yet a shippable product.
 
 ---
 
