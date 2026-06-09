@@ -1,0 +1,498 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum Role {
+  USER
+  LAWYER
+  ADMIN
+}
+
+enum LawyerVerificationStatus {
+  PENDING    // submitted, awaiting admin review
+  VERIFIED   // approved by admin
+  REJECTED   // rejected with reason
+  SUSPENDED  // was verified, now suspended
+}
+
+enum GroupStatus {
+  ACTIVE
+  ARCHIVED
+  CLOSED
+}
+
+enum MemberRole {
+  MEMBER
+  MODERATOR
+  CREATOR
+}
+
+enum ConsultationStatus {
+  PENDING    // booked, not yet paid
+  PAID       // payment confirmed, room not opened yet
+  ACTIVE     // room is open, session in progress
+  COMPLETED  // session ended
+  CANCELLED  // cancelled before session
+  REFUNDED
+}
+
+enum ConsultationType {
+  INDIVIDUAL   // one user + one lawyer
+  GROUP        // multiple users + one lawyer
+}
+
+enum ConsultationMode {
+  CHAT
+  VOICE
+  VIDEO
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum NotificationType {
+  GROUP_INVITE
+  LAWYER_JOINED_GROUP
+  CONSULTATION_BOOKED
+  CONSULTATION_PAID
+  CONSULTATION_STARTED
+  CONSULTATION_ENDED
+  NEW_MESSAGE
+  NEW_REPLY
+  UPVOTE
+  LAWYER_VERIFIED
+  LAWYER_REJECTED
+  SYSTEM
+}
+
+// ─────────────────────────────────────────
+// USER
+// Core identity. Role determines access.
+// ─────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  avatar    String?
+  bio       String?
+  role      Role     @default(USER)
+  isActive  Boolean  @default(true)
+  googleId   String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relations
+  lawyerProfile     LawyerProfile?
+  groupMemberships  GroupMember[]
+  groupsCreated     ConcernGroup[]
+  discussions       Discussion[]
+  discussionReplies DiscussionReply[]
+  discussionVotes   DiscussionVote[]
+  consultations     Consultation[]    @relation("UserConsultations")
+  privateMessages   PrivateMessage[]
+  reviews           LawyerReview[]
+  notifications     Notification[]
+  payments          Payment[]
+  documents         Document[]
+  refreshTokens     RefreshToken[]
+  messages          Message[]
+  aiChats           AiChat[]
+}
+
+// ─────────────────────────────────────────
+// LAWYER PROFILE
+// Separate from User — linked 1:1
+// Contains all verification data
+// ─────────────────────────────────────────
+
+model LawyerProfile {
+  id                 String                   @id @default(cuid())
+  userId             String                   @unique
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // professional info
+  barNumber          String                   @unique
+  barCouncilState    String
+  enrollmentYear     Int
+  specializations    String[]                 // e.g. ["Startup Law", "Cyber Safety"]
+  experience         Int                      // years
+  education          String
+  courtsOfPractice   String[]
+  languages          String[]
+  bio                String
+  linkedin           String?
+  website            String?
+
+  // verification
+  verificationStatus LawyerVerificationStatus @default(PENDING)
+  verifiedAt         DateTime?
+  rejectionReason    String?
+  verifiedBy         String?                  // admin userId
+
+  // documents submitted for verification
+  barCertificateUrl  String?
+  idProofUrl         String?
+  degreeUrl          String?
+
+  // pricing (in INR paise for precision)
+  feePerSession15    Int                      @default(50000)   // ₹500
+  feePerSession30    Int                      @default(100000)  // ₹1000
+  feeGroupSession    Int                      @default(30000)   // ₹300 per person
+  feeFollowUp        Int                      @default(40000)   // ₹400
+
+  // stats (denormalized for performance)
+  rating             Float                    @default(0)
+  reviewCount        Int                      @default(0)
+  totalConsultations Int                      @default(0)
+  isAvailable        Boolean                  @default(true)
+
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  consultations      Consultation[]           @relation("LawyerConsultations")
+  reviews            LawyerReview[]
+  groupParticipations GroupLawyer[]
+}
+
+// ─────────────────────────────────────────
+// CONCERN GROUP
+// The core entity. People with similar
+// legal problems form/join these groups.
+// ─────────────────────────────────────────
+
+model ConcernGroup {
+  id          String      @id @default(cuid())
+  slug        String      @unique  // url-friendly: "tenant-disputes-bangalore"
+  title       String
+  description String
+  category    String      // "Tenant Dispute", "Cyber Fraud", "Startup Law" etc.
+  tags        String[]
+  coverImage  String?
+  status      GroupStatus @default(ACTIVE)
+  isPrivate   Boolean     @default(false)
+
+  // creator
+  creatorId   String
+  creator     User        @relation(fields: [creatorId], references: [id])
+
+  // stats (denormalized)
+  memberCount Int         @default(0)
+  postCount   Int         @default(0)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  members       GroupMember[]
+  discussions   Discussion[]
+  lawyers       GroupLawyer[]
+  consultations Consultation[]
+}
+
+// ─────────────────────────────────────────
+// GROUP MEMBER
+// Users who join a concern group
+// ─────────────────────────────────────────
+
+model GroupMember {
+  id        String     @id @default(cuid())
+  groupId   String
+  userId    String
+  role      MemberRole @default(MEMBER)
+  joinedAt  DateTime   @default(now())
+
+  group     ConcernGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+}
+
+// ─────────────────────────────────────────
+// GROUP LAWYER
+// Verified lawyers who join/are invited
+// to a concern group
+// ─────────────────────────────────────────
+
+model GroupLawyer {
+  id        String   @id @default(cuid())
+  groupId   String
+  lawyerId  String   // LawyerProfile.id
+  joinedAt  DateTime @default(now())
+  note      String?  // why they joined / what they offer
+
+  group     ConcernGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  lawyer    LawyerProfile @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, lawyerId])
+}
+
+// ─────────────────────────────────────────
+// DISCUSSION
+// Public posts inside a concern group
+// ─────────────────────────────────────────
+
+model Discussion {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String
+  title     String
+  content   String
+  isPinned  Boolean  @default(false)
+  upvotes   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group   ConcernGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies DiscussionReply[]
+  votes   DiscussionVote[]
+
+  @@index([groupId, createdAt])
+}
+
+model DiscussionReply {
+  id           String   @id @default(cuid())
+  discussionId String
+  userId       String
+  content      String
+  upvotes      Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  discussion Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DiscussionVote {
+  id           String @id @default(cuid())
+  discussionId String
+  userId       String
+
+  discussion Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([discussionId, userId])
+}
+
+// ─────────────────────────────────────────
+// CONSULTATION
+// The paid event. Created when a user/group
+// requests a lawyer for a session.
+// ─────────────────────────────────────────
+
+model Consultation {
+  id          String             @id @default(cuid())
+  type        ConsultationType   @default(INDIVIDUAL)
+  mode        ConsultationMode   @default(VIDEO)
+  status      ConsultationStatus @default(PENDING)
+
+  // who
+  userId      String             // primary user who booked
+  lawyerId    String             // LawyerProfile.id
+  groupId     String?            // if group consultation
+
+  // what
+  title       String
+  description String
+  scheduledAt DateTime
+  duration    Int                // minutes: 15, 30, 60
+  amountPaise Int                // total amount in paise
+
+  // timing
+  startedAt   DateTime?
+  endedAt     DateTime?
+
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  user         User          @relation("UserConsultations", fields: [userId], references: [id])
+  lawyer       LawyerProfile @relation("LawyerConsultations", fields: [lawyerId], references: [id])
+  group        ConcernGroup? @relation(fields: [groupId], references: [id])
+  payment      Payment?
+  privateRoom  PrivateRoom?
+}
+
+// ─────────────────────────────────────────
+// PAYMENT
+// One payment per consultation
+// ─────────────────────────────────────────
+
+model Payment {
+  id             String        @id @default(cuid())
+  consultationId String        @unique
+  userId         String
+  amountPaise    Int
+  currency       String        @default("INR")
+  status         PaymentStatus @default(PENDING)
+
+  // Razorpay fields
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  consultation Consultation @relation(fields: [consultationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+}
+
+// ─────────────────────────────────────────
+// PRIVATE ROOM
+// Opens after payment confirmed.
+// One room per consultation.
+// ─────────────────────────────────────────
+
+model PrivateRoom {
+  id             String   @id @default(cuid())
+  consultationId String   @unique
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  closedAt       DateTime?
+
+  consultation Consultation     @relation(fields: [consultationId], references: [id])
+  messages     PrivateMessage[]
+  documents    Document[]
+}
+
+// ─────────────────────────────────────────
+// PRIVATE MESSAGE
+// Messages inside a private room
+// ─────────────────────────────────────────
+
+model PrivateMessage {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  room PrivateRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id])
+
+  @@index([roomId, createdAt])
+}
+
+// ─────────────────────────────────────────
+// DOCUMENT
+// Files shared in private rooms
+// ─────────────────────────────────────────
+
+model Document {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  name      String
+  url       String
+  mimeType  String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+
+  room PrivateRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id])
+}
+
+// ─────────────────────────────────────────
+// LAWYER REVIEW
+// Only users who completed a consultation
+// can leave a review
+// ─────────────────────────────────────────
+
+model LawyerReview {
+  id             String   @id @default(cuid())
+  lawyerId       String   // LawyerProfile.id
+  userId         String
+  consultationId String?
+  rating         Int      // 1-5
+  content        String
+  createdAt      DateTime @default(now())
+
+  lawyer LawyerProfile @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id])
+
+  @@unique([userId, lawyerId])
+}
+
+// ─────────────────────────────────────────
+// NOTIFICATION
+// ─────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  link      String?          // frontend route to navigate to
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+// ─────────────────────────────────────────
+// AI CHAT HISTORY
+// ─────────────────────────────────────────
+
+model AiChat {
+  id        String   @id @default(cuid())
+  userId    String?
+  sessionId String   // group messages by session (uuid from frontend)
+  role      String   // "user" | "assistant"
+  content   String
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────
+// MESSAGE (public café chat rooms)
+// ─────────────────────────────────────────
+
+model Message {
+  id        String   @id @default(cuid())
+  room      String   // e.g. "general", "startup-law", "tenant-rights"
+  text      String
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([room, createdAt])
+}
+
+// ─────────────────────────────────────────
+// REFRESH TOKEN
+// ─────────────────────────────────────────
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
