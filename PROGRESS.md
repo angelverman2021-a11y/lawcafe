@@ -239,6 +239,29 @@
 
 ---
 
+## How to Run
+
+### Backend
+```bash
+cd backend
+npm install
+npm run dev        # development (nodemon)
+npm start          # production
+```
+> Runs on http://localhost:4000
+
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev        # development
+npm run build      # production build
+npm start          # serve production build
+```
+> Runs on http://localhost:3000
+
+---
+
 ## Notes
 - Update this file after every session
 - Mark tasks 🔄 when actively working on them
