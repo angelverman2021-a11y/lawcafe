@@ -1,7 +1,7 @@
 # Law Café — Production Upgrade Progress
 
 > Last Updated: 2025 — Phase 1 ✅ Phase 2 ✅ Phase 3 ✅ Phase 4 ✅ Phase 5 ✅
-> Current Stage: Static Frontend (Phase 0 Complete)
+> Current Stage: Critical Gaps Fixed — Auth wired, CSRF added, Token refresh live
 
 ---
 
@@ -246,10 +246,10 @@
 ### 🔴 Critical — Must Fix
 | Gap | Impact | Phase |
 |-----|--------|-------|
-| Frontend is still static HTML — no React | No dynamic UI, no real auth, no API calls wired | Phase 9 |
-| No security hardening (XSS, CSRF, httpOnly cookies) | App is vulnerable to common web attacks | Phase 11 |
-| No deployment pipeline | Cannot ship to real users | Phase 12 |
-| Token refresh logic missing | Users get logged out every 15 mins, no silent refresh | Phase 3 |
+| Frontend is still static HTML — no React | No dynamic UI, no real auth, no API calls wired | Phase 9 | ✅ Fixed — Next.js pages wired to API (login, register, dashboard, Google OAuth callback) |
+| No security hardening (XSS, CSRF, httpOnly cookies) | App is vulnerable to common web attacks | Phase 11 | ✅ Fixed — CSRF double-submit cookies, security headers in next.config.ts, httpOnly refreshToken |
+| No deployment pipeline | Cannot ship to real users | Phase 12 | 🔄 Still needed |
+| Token refresh logic missing | Users get logged out every 15 mins, no silent refresh | Phase 3 | ✅ Fixed — axios interceptor + `/api/auth/refresh` |
 
 ### 🟡 High Priority — Needed for Core Features
 | Gap | Impact | Phase |

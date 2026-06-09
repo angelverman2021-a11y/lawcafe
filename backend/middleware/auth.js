@@ -3,9 +3,10 @@ import { prisma } from '../config/db.js'
 
 export const protect = async (req, res, next) => {
   try {
-    const token = req.headers.authorization?.startsWith('Bearer ')
-      ? req.headers.authorization.split(' ')[1]
-      : null
+    const token =
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.split(' ')[1]
+        : null) || req.cookies?.accessToken
 
     if (!token) return res.status(401).json({ error: 'Not authenticated. Please log in.' })
 

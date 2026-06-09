@@ -19,6 +19,8 @@ import notificationRoutes  from './routes/notifications.js'
 import chatRoutes          from './routes/chat.js'
 import aiRoutes            from './routes/ai.js'
 import { errorHandler, notFound } from './middleware/errorHandler.js'
+import { sanitizeInputs } from './middleware/sanitize.js'
+import { generateToken, doubleCsrfProtection } from './middleware/csrf.js'
 
 const app        = express()
 const httpServer = createServer(app)
@@ -27,10 +29,34 @@ const PORT       = process.env.PORT || 4000
 initSocket(httpServer)
 
 // ── Security ──────────────────────────────
-app.use(helmet())
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:  ["'self'"],
+      scriptSrc:   ["'self'"],
+      styleSrc:    ["'self'", "'unsafe-inline'"],
+      imgSrc:      ["'self'", 'data:', 'https:'],
+      connectSrc:  ["'self'"],
+      fontSrc:     ["'self'"],
+      objectSrc:   ["'none'"],
+      frameAncestors: ["'none'"]
+    }
+  },
+  crossOriginEmbedderPolicy: false
+}))
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  'http://localhost:3000'
+]
 app.use(cors({
-  origin: (origin, cb) => cb(null, true),
-  credentials: true
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+    cb(new Error(`CORS: origin ${origin} not allowed`))
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }))
 
 // ── Rate limiting ─────────────────────────
@@ -49,10 +75,17 @@ app.use('/api/auth/', rateLimit({
 app.use(express.json({ limit: '10kb' }))
 app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
+app.use(sanitizeInputs)
+app.use(doubleCsrfProtection)
 app.use(passport.initialize())
 
 // ── Logging ───────────────────────────────
 if (process.env.NODE_ENV === 'development') app.use(morgan('dev'))
+
+// ── CSRF token endpoint ──────────────────
+app.get('/api/csrf-token', (req, res) => {
+  res.json({ csrfToken: generateToken(req, res) })
+})
 
 // ── Health check ──────────────────────────
 app.get('/health', (_, res) => res.json({
